@@ -1,9 +1,12 @@
 import express from 'express'
 import { MongoClient } from 'mongodb';
+import cors from 'cors'
 import 'dotenv/config'
 const app = express()
 const PORT = 8000
 
+app.use(cors())
+app.use(express.json())
 const client = new MongoClient(process.env.MONGODB_URI );
 
 export async function connectToMongoDB() {
@@ -16,9 +19,26 @@ export async function connectToMongoDB() {
   }
 }
 
-connectToMongoDB() 
+const mongoClient = await connectToMongoDB() ;
+
+app.post('/add-studio', (req,res) =>{
+  try {
+const studiodata = req.body;
+    console.log("Received studio data:",  studiodata);
+    
+    // TODO: Insert studioData into your MongoDB collection here later
+    
+    res.status(201).json({ success: true,
+       message: "Studio added successfully!" });
+  } catch (error) {
+    console.error("Error adding studio:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+})
+
 app.get('/', (req,res) =>{
-    res.send('Server is running finew!')
+   
+    res.send('server is running finew!')
 })
 app.listen(PORT,()=>{
     console.log(`SERVER IS RUNNING AT ${PORT}`)
