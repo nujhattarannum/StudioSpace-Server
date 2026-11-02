@@ -20,14 +20,20 @@ export async function connectToMongoDB() {
 }
 
 const mongoClient = await connectToMongoDB() ;
+const db = mongoClient.db("StudioSpace")
+const studioCollection = db.collection("studio")
 
-app.post('/add-studio', (req,res) =>{
+app.post('/add-studio', async(req,res) =>{
   try {
 const studiodata = req.body;
-    console.log("Received studio data:",  studiodata);
-    
-    // TODO: Insert studioData into your MongoDB collection here later
-    
+   
+// TODO: Insert studioData into your MongoDB collection here later
+    const result = await studioCollection.insertOne(studiodata)
+
+      console.log(result);
+
+      res.send(result)
+
     res.status(201).json({ success: true,
        message: "Studio added successfully!" });
   } catch (error) {
