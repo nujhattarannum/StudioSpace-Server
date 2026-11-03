@@ -1,7 +1,8 @@
 import express from 'express'
-import { MongoClient } from 'mongodb';
 import cors from 'cors'
 import 'dotenv/config'
+import {MongoClient} from 'mongodb'
+import { ObjectId } from 'mongodb'
 const app = express()
 const PORT = 8000
 
@@ -47,10 +48,22 @@ app.get('/', (req,res) =>{
     res.send('server is running finew!')
 })
 
-app.get('/all-studios', async(req,res) =>{
+app.get('/studios', async(req,res) =>{
    const allStudioData = await studioCollection.find().toArray()
     res.send(allStudioData)
 })
+
+
+
+app.get('/studios/:id', async (req, res) => {
+ 
+    const { id } = req.params;
+    console.log("Looking for studio ID:", id); // <--- See what ID is printed in your server terminal
+    const detail = await studioCollection.findOne({ _id: new ObjectId(id) });
+    console.log("Found studio:", detail); // <--- See if this is null
+     res.send(detail)
+});
+
 app.listen(PORT,()=>{
     console.log(`SERVER IS RUNNING AT ${PORT}`)
 })
