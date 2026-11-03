@@ -64,6 +64,12 @@ app.get('/studios/:id', async (req, res) => {
      res.send(detail)
 });
 
+
+app.delete('/my-listings/:id' , async(req, res) => {
+  const {id} = req.params
+  const result = await studioCollection.deleteOne({_id : new ObjectId(id)})
+  res.json(result)
+})
 app.listen(PORT,()=>{
     console.log(`SERVER IS RUNNING AT ${PORT}`)
 })
