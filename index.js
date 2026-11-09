@@ -25,6 +25,15 @@ const db = mongoClient.db("StudioSpace")
 const studioCollection = db.collection("studio")
 const bookingCollection = db.collection("booking")
 
+const verifyApi = (req, res ,next) =>{
+  const authHeaders = req.headers.authorization
+  if (authHeaders!=="user logged in"){
+    return res.status(401).send({msg:'Unauthorized'})
+  }
+  next();
+}
+
+// API to add new studio
 app.post('/add-studio', async(req,res) =>{
   try {
 const studiodata = req.body;
@@ -49,7 +58,9 @@ app.get('/', (req,res) =>{
     res.send('server is running finew!')
 })
 
-app.get('/studios', async(req,res) =>{
+app.get('/studios', 
+  verifyApi,
+  async(req,res) =>{
    const allStudioData = await studioCollection.find().toArray()
     res.send(allStudioData)
 })
@@ -77,6 +88,7 @@ app.get('/studios/:id', async (req, res) => {
      res.send(detail)
 });
 
+// API to get all my bookings 
 app.get('/my-booking/:email', async (req, res) => {
  
     const { email } = req.params;
@@ -87,6 +99,7 @@ app.get('/my-booking/:email', async (req, res) => {
      res.send(allbookings)
 });
 
+// To update the Pending to Cancelled
 app.patch("/my-booking/:id/cancel", async (req, res) => {
   try {
     const { id } = req.params;
@@ -96,25 +109,20 @@ app.patch("/my-booking/:id/cancel", async (req, res) => {
         message: "Invalid booking ID",
       });
     }
-
     const result = await bookingCollection.updateOne(
-      {
-        _id: new ObjectId(id),
+      {  _id: new ObjectId(id),
         status: "Pending",
       },
-      {
-        $set: {
+      { $set: {
           status: "Cancelled",
         },
-      }
+    }
     );
-
     if (result.matchedCount === 0) {
       return res.status(404).json({
         message: "Pending booking not found",
       });
     }
-
     res.status(200).json({
       success: true,
       message: "Booking cancelled successfully",
@@ -127,11 +135,12 @@ app.patch("/my-booking/:id/cancel", async (req, res) => {
     });
   }
 });
-
+ // Api to show the top 6 newest studios
 app.get("/featured-studios", async (req, res) => {
   try {
     const featuredStudios = await studioCollection
       .find()
+      .sort({ _id: -1 }) // -1 sorts from newest to oldest based on ObjectId timestamp
       .limit(6)
       .toArray();
 
@@ -142,12 +151,23 @@ app.get("/featured-studios", async (req, res) => {
   }
 });
 
+ // APi to delete a listing
 app.delete('/my-listings/:id' , async(req, res) => {
   const {id} = req.params
   const result = await studioCollection.deleteOne({_id : new ObjectId(id)})
   res.json(result)
 })
 
+
+// API for fetching my -listings
+app.get('/my-listings/:email' , async(req, res) => {
+  const { email } = req.params
+  const listedStudios = await studioCollection.find(
+    { ownerEmail : email }).toArray()
+  res.json(listedStudios)
+})
+
+// API to update the studios 
 app.put("/studios/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -158,7 +178,6 @@ app.put("/studios/:id", async (req, res) => {
         message: "Invalid studio ID",
       });
     }
-
     // Do not allow the client to change ownership fields
     delete updatedData.ownerEmail;
     delete updatedData.ownerName;
@@ -168,28 +187,50 @@ app.put("/studios/:id", async (req, res) => {
       { _id: new ObjectId(id) },
       { $set: updatedData }
     );
-
     if (result.matchedCount === 0) {
       return res.status(404).json({
         message: "Studio not found",
       });
     }
-
     res.status(200).json({
       success: true,
       message: "Studio updated successfully",
     });
-
   } catch (error) {
     console.error("Error updating studio:", error);
-
+    
     res.status(500).json({
       message: "Server error while updating studio",
     });
   }
 });
 
+// Express Route: To GET the studio which is getting updated
+app.get("/studios/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userEmail = req.headers["x-user-email"]; // Or get session/user from your auth middleware
+
+    // 1. Fetch ONLY the specific studio by ID from MongoDB
+    const studio = await studioCollection.findById(id);
+
+    if (!studio) {
+      return res.status(404).json({ message: "Studio not found" });
+    }
+
+    // 2. Server-side Authorization Check
+    if (studio.ownerEmail.toLowerCase() !== userEmail?.toLowerCase()) {
+      return res.status(403).json({ message: "Unauthorized access to this listing" });
+    }
+
+    // 3. Return the single studio object
+    res.status(200).json(studio);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
 
 app.listen(PORT,()=>{
     console.log(`SERVER IS RUNNING AT ${PORT}`)
-})
+});
+export default app
