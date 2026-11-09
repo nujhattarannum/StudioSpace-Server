@@ -3,11 +3,22 @@ import cors from 'cors'
 import 'dotenv/config'
 import {MongoClient} from 'mongodb'
 import { ObjectId } from 'mongodb'
+import { toNodeHandler } from "better-auth/node";
+import { auth } from "./auth.js"; // adjust path to your auth file
 const app = express()
 const PORT = 8000
 
-app.use(cors())
+app.use(
+  cors({
+    origin: ["http://localhost:3000"], // Explicitly list your frontend URL, never use '*' with credentials
+    credentials: true,               // Required for cookies and sessions to pass back and forth
+  })
+);
 app.use(express.json())
+
+// THIS LINE IS MANDATORY: It tells Express to catch all /api/auth/* requests and pass them to Better-Auth
+app.use("/api/auth", toNodeHandler(auth));
+
 const client = new MongoClient(process.env.MONGODB_URI );
 
 export async function connectToMongoDB() {
@@ -97,6 +108,23 @@ app.get('/my-booking/:email', async (req, res) => {
   
     console.log("Found studio:", allbookings); // <--- See if this is null
      res.send(allbookings)
+});
+
+// APi from booking card component to request book
+app.post("/booking-request", async (req, res) => {
+  try {
+    const newBooking = {
+      ...req.body, // This safely captures studioId, studioTitle, status ("Pending"), email, etc. from your frontend
+      status: req.body.status || "Pending", // Fallback safety check
+      createdAt: new Date(), // Adds the server timestamp since frontend doesn't send it
+    };
+
+    const result = await db.collection("booking").insertOne(newBooking);
+    res.status(201).json({ success: true, bookingId: result.insertedId });
+  } catch (error) {
+    console.error("Booking error:", error);
+    res.status(500).json({ error: "Failed to create booking" });
+  }
 });
 
 // To update the Pending to Cancelled
