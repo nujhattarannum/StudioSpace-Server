@@ -3,6 +3,8 @@ import cors from 'cors'
 import 'dotenv/config'
 import {MongoClient} from 'mongodb'
 import { ObjectId } from 'mongodb'
+import { createRemoteJWKSet, jwtVerify } from 'jose'
+
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.js"; // adjust path to your auth file
 const app = express()
@@ -36,16 +38,38 @@ const db = mongoClient.db("StudioSpace")
 const studioCollection = db.collection("studio")
 const bookingCollection = db.collection("booking")
 
-const verifyApi = (req, res ,next) =>{
-  const authHeaders = req.headers.authorization
-  if (authHeaders!=="user logged in"){
-    return res.status(401).send({msg:'Unauthorized'})
+const verifyApi = async(req, res ,next) =>{
+  const authHeader = req.headers.authorization
+  if (!authHeader){
+    return res.status(401).send({msg:'Unauthorized access'})
   }
+
+  const token = authHeader.split(" ")[1];
+  if(!token){
+  return res.status(401).send({msg:'Unauthorized access'})
+  }
+  console.log(token)
+   const JWKS = createRemoteJWKSet(
+      new URL(`${process.env.FRONTEND_URI}/api/auth/jwks`)
+    );
+
+    try{
+        const { payload } = await jwtVerify(token, JWKS, {
+      issuer: 'http://localhost:3000', // Should match your JWT issuer, which is the BASE_URL
+      audience: 'http://localhost:3000', // Should match your JWT audience, which is the BASE_URL by default
+    })
+
+   // req.user = payload ;
+    console.log(payload)
+    } catch(error) {
+        return res.status(401).send({msg:'Unauthorized access'})
+    }
+
   next();
 }
 
 // API to add new studio
-app.post('/add-studio', async(req,res) =>{
+app.post('/add-studio',async(req,res) =>{
   try {
 const studiodata = req.body;
    
@@ -68,28 +92,14 @@ app.get('/', (req,res) =>{
    
     res.send('server is running finew!')
 })
-
+ //APi to get all the studios
 app.get('/studios', 
-  verifyApi,
   async(req,res) =>{
    const allStudioData = await studioCollection.find().toArray()
     res.send(allStudioData)
 })
 
-app.post('/booking', async(req,res) =>{
-  try{
-  const data = req.body
-  const result = await bookingCollection.insertOne(data)
- console.log("✅ Database Insert Result:", result);
-
-    res.send(result);
-  } catch (error) {
-    // 3. Log any backend errors
-    console.error("❌ Error saving booking:", error);
-    res.status(500).json({ error: "Failed to save booking" });
-  }
-});
-
+//API to get the details of a specific studio
 app.get('/studios/:id', async (req, res) => {
  
     const { id } = req.params;
@@ -111,19 +121,41 @@ app.get('/my-booking/:email', async (req, res) => {
 });
 
 // APi from booking card component to request book
+
 app.post("/booking-request", async (req, res) => {
   try {
+    const { studioId, bookedDate, Time, status } = req.body;
+
+    // 1. Only check for overlaps if the new booking is trying to be active/pending
+    // (or you can check against ALL existing "Confirmed" bookings)
+    const existingConflict = await db.collection("booking").findOne({
+      studioId: new ObjectId(studioId),
+      bookedDate: bookedDate, // Make sure date format matches (e.g., "YYYY-MM-DD")
+      Time: Time,             // Exact time slot match (or use custom range logic if times vary)
+      status: "Confirmed",    // 👈 Check against confirmed bookings
+    });
+
+    if (existingConflict) {
+      return res.status(409 /* Conflict */).json({
+        success: false,
+        error: "This studio is already booked and confirmed for this date and time slot. Please choose another slot.",
+      });
+    }
+
+    // 2. If no collision, proceed to save the new booking
     const newBooking = {
-      ...req.body, // This safely captures studioId, studioTitle, status ("Pending"), email, etc. from your frontend
-      status: req.body.status || "Pending", // Fallback safety check
-      createdAt: new Date(), // Adds the server timestamp since frontend doesn't send it
+      ...req.body,
+      studioId: new ObjectId(studioId),
+      status: status || "Pending",
+      createdAt: new Date(),
     };
 
     const result = await db.collection("booking").insertOne(newBooking);
     res.status(201).json({ success: true, bookingId: result.insertedId });
+    
   } catch (error) {
-    console.error("Booking error:", error);
-    res.status(500).json({ error: "Failed to create booking" });
+    console.error("Double-booking check error:", error);
+    res.status(500).json({ error: "Failed to process booking request" });
   }
 });
 
@@ -180,15 +212,68 @@ app.get("/featured-studios", async (req, res) => {
 });
 
  // APi to delete a listing
-app.delete('/my-listings/:id' , async(req, res) => {
+app.delete('/my-listings/:id' ,verifyApi, async(req, res) => {
   const {id} = req.params
   const result = await studioCollection.deleteOne({_id : new ObjectId(id)})
   res.json(result)
 })
 
+// Update booking status (Confirm or Cancelled/Reject)
+app.patch('/bookings/:id/status', async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+    const { status } = req.body; // Expects "Confirmed" or "Cancelled"
+
+    // Validate that status is valid
+    if (!["Confirmed", "Cancelled", "Completed"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status value provided." });
+    }
+
+    const result = await bookingCollection.updateOne(
+      { _id: new ObjectId(bookingId) },
+      { $set: { status: status } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: "Booking not found." });
+    }
+
+    res.json({ message: `Booking status successfully updated to ${status}` });
+  } catch (error) {
+    console.error("Error updating booking status:", error);
+    res.status(500).json({ error: "Failed to update booking status." });
+  }
+});
+
+// Get all incoming booking requests for studios owned by a specific email
+app.get('/owner-bookings/:email', async (req, res) => {
+  try {
+    const ownerEmail = req.params.email;
+    
+    // 1. Find all studios belonging to this owner (check both ownerEmail and hostEmail just in case)
+    const ownerStudios = await studioCollection.find({  ownerEmail: ownerEmail 
+    }).toArray();
+
+    // Extract both IDs and Titles to match against bookings
+    const studioIds = ownerStudios.map(s => s._id.toString());
+    const studioTitles = ownerStudios.map(s => s.title);
+
+    // 2. Find bookings that belong to these studios (checking studioId or studioTitle)
+    const bookings = await bookingCollection.find({
+      $or: [
+        { studioId: { $in: studioIds } },
+        { studioTitle: { $in: studioTitles } }
+      ]
+    }).toArray();
+    res.json(bookings);
+  } catch (error) {
+    console.error("Error fetching owner bookings:", error);
+    res.status(500).json({ error: "Failed to fetch booking requests" });
+  }
+});
 
 // API for fetching my -listings
-app.get('/my-listings/:email' , async(req, res) => {
+app.get('/my-listings/:email' ,async(req, res) => {
   const { email } = req.params
   const listedStudios = await studioCollection.find(
     { ownerEmail : email }).toArray()
@@ -196,7 +281,7 @@ app.get('/my-listings/:email' , async(req, res) => {
 })
 
 // API to update the studios 
-app.put("/studios/:id", async (req, res) => {
+app.put("/studios/:id", verifyApi,async (req, res) => {
   try {
     const { id } = req.params;
     const updatedData = req.body;
@@ -234,7 +319,7 @@ app.put("/studios/:id", async (req, res) => {
 });
 
 // Express Route: To GET the studio which is getting updated
-app.get("/studios/:id", async (req, res) => {
+app.get("/studios/:id", verifyApi,async (req, res) => {
   try {
     const { id } = req.params;
     const userEmail = req.headers["x-user-email"]; // Or get session/user from your auth middleware

@@ -9,14 +9,22 @@ const db = client.db("StudioSpace"); // Use your database name
 
 export const auth = betterAuth({
   database: mongodbAdapter(db),
-  baseURL: "http://localhost:8000", // Your backend URL
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:8000", // Your backend URL
   secret: process.env.BETTER_AUTH_SECRET, // Add a random string secret in your .env file
+  
+  emailAndPassword: {
+    enabled: true,
+  },
+  
   socialProviders: {
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     },
   },
-  trustedOrigins: ["http://localhost:3000"], // Explicitly trust your Next.js frontend
+  trustedOrigins: [
+    "http://localhost:3000",
+    "https://studio-space-client-m30ijltbr-nujhat-s-project.vercel.app" //  Your live Vercel frontend UR
+  ], // Explicitly trust your Next.js frontend
  
 });
