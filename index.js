@@ -12,7 +12,7 @@ const PORT = 8000
 
 app.use(
   cors({
-    origin: ["http://localhost:3000"], // Explicitly list your frontend URL, never use '*' with credentials
+    origin: process.env.CLIENT_URL, // Explicitly list your frontend URL, never use '*' with credentials
     credentials: true,               // Required for cookies and sessions to pass back and forth
   })
 );
