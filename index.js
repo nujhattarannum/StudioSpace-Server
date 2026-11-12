@@ -59,7 +59,7 @@ const verifyApi = async(req, res ,next) =>{
       audience: 'http://localhost:3000', // Should match your JWT audience, which is the BASE_URL by default
     })
 
-   // req.user = payload ;
+    req.user = payload ;
     console.log(payload)
     } catch(error) {
         return res.status(401).send({msg:'Unauthorized access'})
@@ -69,7 +69,7 @@ const verifyApi = async(req, res ,next) =>{
 }
 
 // API to add new studio
-app.post('/add-studio',async(req,res) =>{
+app.post('/add-studio',verifyApi,async(req,res) =>{
   try {
 const studiodata = req.body;
    
@@ -109,20 +109,36 @@ app.get('/studios/:id', async (req, res) => {
      res.send(detail)
 });
 
-// API to get all my bookings 
-app.get('/my-booking/:email', async (req, res) => {
- 
+// API to get all my bookings with auto-completion for past dates
+app.get('/my-booking/:email', verifyApi, async (req, res) => {
+  try {
     const { email } = req.params;
-   
-    const allbookings = await bookingCollection.find({ email:email }).toArray();
-  
-    console.log("Found studio:", allbookings); // <--- See if this is null
-     res.send(allbookings)
+    const currentDate = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD" format
+
+    // 1. Automatically update past confirmed bookings to "Completed"
+    await bookingCollection.updateMany(
+      {
+        email: email,
+        status: "Confirmed",
+        bookedDate: { $lt: currentDate } // Date is earlier than today
+      },
+      {
+        $set: { status: "Completed" }
+      }
+    );
+
+    // 2. Fetch all bookings for the user
+    const allbookings = await bookingCollection.find({ email: email }).toArray();
+    res.send(allbookings);
+  } catch (error) {
+    console.error("Error fetching bookings:", error);
+    res.status(500).json({ error: "Failed to fetch bookings" });
+  }
 });
 
 // APi from booking card component to request book
 
-app.post("/booking-request", async (req, res) => {
+app.post("/booking-request",verifyApi, async (req, res) => {
   try {
     const { studioId, bookedDate, Time, status } = req.body;
 
@@ -160,7 +176,7 @@ app.post("/booking-request", async (req, res) => {
 });
 
 // To update the Pending to Cancelled
-app.patch("/my-booking/:id/cancel", async (req, res) => {
+app.patch("/my-booking/:id/cancel",verifyApi, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -219,7 +235,7 @@ app.delete('/my-listings/:id' ,verifyApi, async(req, res) => {
 })
 
 // Update booking status (Confirm or Cancelled/Reject)
-app.patch('/bookings/:id/status', async (req, res) => {
+app.patch('/bookings/:id/status', verifyApi,async (req, res) => {
   try {
     const bookingId = req.params.id;
     const { status } = req.body; // Expects "Confirmed" or "Cancelled"
@@ -246,7 +262,7 @@ app.patch('/bookings/:id/status', async (req, res) => {
 });
 
 // Get all incoming booking requests for studios owned by a specific email
-app.get('/owner-bookings/:email', async (req, res) => {
+app.get('/owner-bookings/:email',verifyApi, async (req, res) => {
   try {
     const ownerEmail = req.params.email;
     
@@ -273,7 +289,7 @@ app.get('/owner-bookings/:email', async (req, res) => {
 });
 
 // API for fetching my -listings
-app.get('/my-listings/:email' ,async(req, res) => {
+app.get('/my-listings/:email' ,verifyApi,async(req, res) => {
   const { email } = req.params
   const listedStudios = await studioCollection.find(
     { ownerEmail : email }).toArray()
@@ -281,7 +297,7 @@ app.get('/my-listings/:email' ,async(req, res) => {
 })
 
 // API to update the studios 
-app.put("/studios/:id", verifyApi,async (req, res) => {
+app.put("/studios/:id/update", verifyApi,async (req, res) => {
   try {
     const { id } = req.params;
     const updatedData = req.body;
@@ -317,6 +333,68 @@ app.put("/studios/:id", verifyApi,async (req, res) => {
     });
   }
 });
+
+// POST /studios/:id/reviews - Add a review to a studio
+app.post("/studios/:id/reviews", verifyApi, async (req, res) => {
+  try {
+    const studioId = req.params.id;
+    const { rating, comment } = req.body;
+
+    console.log("Studio ID:", studioId);
+    console.log("Received rating:", rating);
+    console.log("Received comment:", comment);
+    console.log("Authenticated user:", req.user);
+
+    if (!ObjectId.isValid(studioId)) {
+      return res.status(400).json({
+        error: "Invalid studio ID format",
+      });
+    }
+    // Extract user's name
+    const author =
+      req.user?.name ||
+      req.user?.email?.split("@")[0] ||
+      "Creator";
+    // Create the new review object
+    const newReview = {
+      author,
+      rating: Number(rating),
+      date: new Date().toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
+      comment,
+    };
+    console.log("New review object:", newReview);
+
+    // Add review to MongoDB
+    const result = await studioCollection.findOneAndUpdate(
+      { _id: new ObjectId(studioId) },
+      { $push: { reviews: newReview } },
+      { returnDocument: "after" }
+    );
+
+    // Get updated studio document
+    const updatedStudio = result.value || result;
+    console.log("Updated studio:", updatedStudio);
+
+    if (!updatedStudio || !updatedStudio._id) {
+      return res.status(404).json({
+        error: "Studio not found",
+      });
+    }
+    console.log("Review successfully saved!");
+    res.status(200).json(updatedStudio);
+  } catch (error) {
+    console.error("Error submitting review:", error);
+
+    res.status(500).json({
+      error: "Failed to submit review",
+    });
+  }
+});
+
 
 // Express Route: To GET the studio which is getting updated
 app.get("/studios/:id", verifyApi,async (req, res) => {
