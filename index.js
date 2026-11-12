@@ -407,7 +407,7 @@ app.get("/studios/:id/get-update", verifyApi,async (req, res) => {
       return res.status(401).json({ message: "Unauthorized: User email not found in token" });
     }
     // 1. Fetch ONLY the specific studio by ID from MongoDB
-    const studio = await studioCollection.findById(id);
+    const studio = await studioCollection.findOne({ _id: new ObjectId(id) });
 
     if (!studio) {
       return res.status(404).json({ message: "Studio not found" });
