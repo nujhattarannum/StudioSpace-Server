@@ -138,42 +138,64 @@ app.get('/my-booking/:email', verifyApi, async (req, res) => {
 
 // APi from booking card component to request book
 
-app.post("/booking-request",verifyApi, async (req, res) => {
+
+app.post("/booking-request", verifyApi, async (req, res) => {
   try {
-    const { studioId, bookedDate, Time, status } = req.body;
+    const { studioId, bookedDate, Time } = req.body;
 
-    // 1. Only check for overlaps if the new booking is trying to be active/pending
-    // (or you can check against ALL existing "Confirmed" bookings)
-    const existingConflict = await db.collection("booking").findOne({
-      _id: new ObjectId(studioId),
-      bookedDate: bookedDate, // Make sure date format matches (e.g., "YYYY-MM-DD")
-      Time: Time,             // Exact time slot match (or use custom range logic if times vary)
-      status: "Confirmed",    // 👈 Check against confirmed bookings
-    });
-
-    if (existingConflict) {
-      return res.status(409 /* Conflict */).json({
+    // 1. Validate required fields
+    if (!studioId || !bookedDate || !Time) {
+      return res.status(400).json({
         success: false,
-        error: "This studio is already booked and confirmed for this date and time slot. Please choose another slot.",
+        error: "Studio ID, booking date, and time are required."
       });
     }
 
-    // 2. If no collision, proceed to save the new booking
+    // 2. Check for an existing booking
+    const existingConflict = await bookingCollection.findOne({
+      studioId: studioId.toString(),
+      bookedDate: bookedDate,
+      Time: Time,
+      status: {
+        $in: ["Pending", "Confirmed"]
+      }
+    });
+
+    // 3. Prevent duplicate booking
+    if (existingConflict) {
+      return res.status(409).json({
+        success: false,
+        error: "This studio is already booked or has a pending booking for this date and time. Please choose another time slot."
+      });
+    }
+
+    // 4. Create new booking
     const newBooking = {
       ...req.body,
-      studioId: new ObjectId(studioId),
-      status: status || "Pending",
-      createdAt: new Date(),
+      studioId: studioId.toString(),
+      status: "Pending",
+      createdAt: new Date()
     };
 
-    const result = await db.collection("booking").insertOne(newBooking);
-    res.status(201).json({ success: true, bookingId: result.insertedId });
-    
+    // 5. Save booking
+    const result = await bookingCollection.insertOne(newBooking);
+
+    return res.status(201).json({
+      success: true,
+      message: "Booking request submitted successfully!",
+      bookingId: result.insertedId
+    });
+
   } catch (error) {
-    console.error("Double-booking check error:", error);
-    res.status(500).json({ error: "Failed to process booking request" });
+    console.error("Booking request error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: "Failed to process booking request."
+    });
   }
 });
+
 
 // To update the Pending to Cancelled
 app.patch("/my-booking/:id/cancel",verifyApi, async (req, res) => {
