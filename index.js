@@ -397,7 +397,7 @@ app.post("/studios/:id/reviews", verifyApi, async (req, res) => {
 
 
 // Express Route: To GET the studio which is getting updated
-app.get("/studios/:id", verifyApi,async (req, res) => {
+app.get("/studios/:id/get-update", verifyApi,async (req, res) => {
   try {
     const { id } = req.params;
     const userEmail = req.headers["x-user-email"]; // Or get session/user from your auth middleware
