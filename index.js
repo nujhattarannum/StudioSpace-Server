@@ -400,8 +400,12 @@ app.post("/studios/:id/reviews", verifyApi, async (req, res) => {
 app.get("/studios/:id/get-update", verifyApi,async (req, res) => {
   try {
     const { id } = req.params;
-    const userEmail = req.headers["x-user-email"]; // Or get session/user from your auth middleware
+   // 2. Get user email securely from the decoded JWT payload (req.user)
+    const userEmail = req.user?.email; 
 
+    if (!userEmail) {
+      return res.status(401).json({ message: "Unauthorized: User email not found in token" });
+    }
     // 1. Fetch ONLY the specific studio by ID from MongoDB
     const studio = await studioCollection.findById(id);
 
