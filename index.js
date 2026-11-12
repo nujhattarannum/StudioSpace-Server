@@ -145,7 +145,7 @@ app.post("/booking-request",verifyApi, async (req, res) => {
     // 1. Only check for overlaps if the new booking is trying to be active/pending
     // (or you can check against ALL existing "Confirmed" bookings)
     const existingConflict = await db.collection("booking").findOne({
-      studioId: new ObjectId(studioId),
+      _id: new ObjectId(studioId),
       bookedDate: bookedDate, // Make sure date format matches (e.g., "YYYY-MM-DD")
       Time: Time,             // Exact time slot match (or use custom range logic if times vary)
       status: "Confirmed",    // 👈 Check against confirmed bookings
