@@ -55,8 +55,8 @@ const verifyApi = async(req, res ,next) =>{
 
     try{
         const { payload } = await jwtVerify(token, JWKS, {
-      issuer: 'http://localhost:3000', // Should match your JWT issuer, which is the BASE_URL
-      audience: 'http://localhost:3000', // Should match your JWT audience, which is the BASE_URL by default
+      issuer: process.env.FRONTEND_URI, // Should match your JWT issuer, which is the BASE_URL
+      audience: process.env.FRONTEND_URI, // Should match your JWT audience, which is the BASE_URL by default
     })
 
     req.user = payload ;

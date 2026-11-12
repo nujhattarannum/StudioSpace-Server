@@ -9,7 +9,7 @@ const db = client.db("StudioSpace"); // Use your database name
 
 export const auth = betterAuth({
   database: mongodbAdapter(db),
-  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:8000", // Your backend URL
+  baseURL: process.env.BETTER_AUTH_URL , // Your backend URL
   secret: process.env.BETTER_AUTH_SECRET, // Add a random string secret in your .env file
   
   emailAndPassword: {
